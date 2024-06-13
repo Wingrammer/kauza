@@ -1,40 +1,56 @@
-import altair as alt
-import numpy as np
-import pandas as pd
 import streamlit as st
+import requests
+import base64
 
-"""
-# Welcome to Streamlit!
+# Title of the app
+st.title("Chat with Kauza Bots")
 
-Edit `/streamlit_app.py` to customize this app to your heart's desire :heart:.
-If you have any questions, checkout our [documentation](https://docs.streamlit.io) and [community
-forums](https://discuss.streamlit.io).
+# Retrieve URL parameters
+query_params = st.query_params
+bot_id = query_params.get("bot", "ZGJiZjQ4ZWQtM2I2ZC00YTIwLWEwOTEtNjA2ZDBiZDZhNDcwLTY1ZTllZjBkN2FlOGNlMDhlMDcxYjRlMg==")
+decoded_data = base64.b64decode(bot_id).decode()
+parts = decoded_data.split('-')
+agent_id = parts.pop()
+tenant_id = "-".join(parts)
 
-In the meantime, below is an example of what you can do with just a few lines of code:
-"""
+# Display the retrieved tenant_id and agent_id
+st.write(f"Tenant ID: {tenant_id}")
+st.write(f"Agent ID: {agent_id}")
 
-num_points = st.slider("Number of points in spiral", 1, 10000, 1100)
-num_turns = st.slider("Number of turns in spiral", 1, 300, 31)
+if tenant_id and agent_id:
+    # Input field for the user to enter their message
+    user_message = st.text_input("You: ", "")
 
-indices = np.linspace(0, 1, num_points)
-theta = 2 * np.pi * num_turns * indices
-radius = indices
+    # Display the chat history
+    if 'chat_history' not in st.session_state:
+        st.session_state['chat_history'] = []
 
-x = radius * np.cos(theta)
-y = radius * np.sin(theta)
+    for chat in st.session_state['chat_history']:
+        st.write(chat)
 
-df = pd.DataFrame({
-    "x": x,
-    "y": y,
-    "idx": indices,
-    "rand": np.random.randn(num_points),
-})
+    # If the user enters a message, send it to the Rasa server and display the response
+    if st.button("Send") and user_message:
+        sender_id = "test_user"  # You can set this to a unique ID for each user
 
-st.altair_chart(alt.Chart(df, height=700, width=700)
-    .mark_point(filled=True)
-    .encode(
-        x=alt.X("x", axis=None),
-        y=alt.Y("y", axis=None),
-        color=alt.Color("idx", legend=None, scale=alt.Scale()),
-        size=alt.Size("rand", legend=None, scale=alt.Scale(range=[1, 150])),
-    ))
+        # Define the URL of your custom Rasa REST endpoint
+        url = f"http://kauza.serveo.net/webhooks/rest/webhook/{tenant_id}/agents/{agent_id}"
+        
+        payload = {
+            "sender": sender_id,
+            "message": user_message
+        }
+        
+        response = requests.post(url, json=payload)
+        
+        if response.status_code == 200:
+            responses = response.json()
+            bot_responses = [r['text'] for r in responses if 'text' in r]
+            for bot_response in bot_responses:
+                st.session_state['chat_history'].append(f"Bot: {bot_response}")
+        else:
+            st.write("Error: Could not reach the Rasa server.")
+        
+        st.session_state['chat_history'].append(f"You: {user_message}")
+        st.experimental_rerun()  # Rerun to update the chat history
+else:
+    st.write("Please provide both Tenant ID and Agent ID as URL parameters to start the chat. Example: `?tenant_id=your_tenant_id&agent_id=your_agent_id`")
